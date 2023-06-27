@@ -6,14 +6,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterator
 
+# pip install python-dotenv
+from dotenv import load_dotenv
 import requests
 
 from common_all import AnyDict, BranchInfo
 
+load_dotenv()
+
 HERE = Path(__file__).parent
 
 GITHUB_PR_API = "https://api.github.com/repos/trezor/trezor-firmware/pulls"
-GH_TOKEN = "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"
+GH_TOKEN = os.getenv("GITHUB_API_TOKEN")
 GH_HEADERS = {"Authorization": f"token {GH_TOKEN}"} if GH_TOKEN else {}
 
 

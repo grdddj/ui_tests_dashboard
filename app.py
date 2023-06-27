@@ -26,8 +26,7 @@ LAST_UPDATE_TS = 0
 UPDATE_ALLOWED_EVERY_S = 30
 
 
-@app.get("/branch/{branch_name:path}")
-async def get_branch_info(branch_name: str):
+def do_branch_info(branch_name: str):
     try:
         logger.info(f"Branch: {branch_name}")
         info = get_latest_infos_for_branch(branch_name, find_status=True)
@@ -35,6 +34,16 @@ async def get_branch_info(branch_name: str):
     except Exception as e:
         logger.exception(f"Error: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.get("/branch/{branch_name:path}")
+async def get_branch_info(branch_name: str):
+    return do_branch_info(branch_name)
+
+
+@app.get("/gitlab/{branch_name:path}")
+async def get_gitlab_info(branch_name: str):
+    return do_branch_info(branch_name)
 
 
 @app.get("/dashboard")
