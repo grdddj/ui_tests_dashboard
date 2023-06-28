@@ -2,6 +2,7 @@
 # uvicorn app:app --reload --host 0.0.0.0 --port 8002
 from __future__ import annotations
 
+import asyncio
 import time
 from pathlib import Path
 
@@ -26,24 +27,15 @@ LAST_UPDATE_TS = 0
 UPDATE_ALLOWED_EVERY_S = 30
 
 
-def do_branch_info(branch_name: str):
+@app.get("/branch/{branch_name:path}")
+async def get_branch_info(branch_name: str):
     try:
         logger.info(f"Branch: {branch_name}")
-        info = get_latest_infos_for_branch(branch_name, find_status=True)
-        return {"info": info}
+        pipeline_link, info = get_latest_infos_for_branch(branch_name, find_status=True)
+        return {"info": info, "pipeline_link": pipeline_link}
     except Exception as e:
         logger.exception(f"Error: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
-
-
-@app.get("/branch/{branch_name:path}")
-async def get_branch_info(branch_name: str):
-    return do_branch_info(branch_name)
-
-
-@app.get("/gitlab/{branch_name:path}")
-async def get_gitlab_info(branch_name: str):
-    return do_branch_info(branch_name)
 
 
 @app.get("/dashboard")
@@ -78,10 +70,12 @@ async def update_dashboard():
     try:
         global LAST_UPDATE_TS
         if time.time() - LAST_UPDATE_TS > UPDATE_ALLOWED_EVERY_S:
-            do_update_pulls()
+            # call do_update_pulls asynchonously not to block the server for other clients
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, do_update_pulls)
             LAST_UPDATE_TS = time.time()  # type: ignore
         else:
-            time.sleep(5)
+            await asyncio.sleep(5)
         return RedirectResponse(url="/dashboard")
     except Exception as e:
         logger.exception(f"Error: {e}")

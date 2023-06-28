@@ -6,9 +6,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterator
 
+import requests
+
 # pip install python-dotenv
 from dotenv import load_dotenv
-import requests
 
 from common_all import AnyDict, BranchInfo
 
@@ -34,7 +35,12 @@ def load_metadata_cache() -> AnyDict:
     return load_cache_file()["metadata"]
 
 
-def update_cache(cache_dict: dict[str, BranchInfo]) -> None:
+def update_cache(cache_dict: dict[str, BranchInfo], all_branches: list[str]) -> None:
+    # Removing already merged branches from cache
+    for branch in CACHE:
+        if branch not in all_branches:
+            del CACHE[branch]
+
     CACHE.update(cache_dict)
     json_writable_cache_dict = {key: value.to_dict() for key, value in CACHE.items()}
     content = {
@@ -72,28 +78,59 @@ def get_all_gh_pulls() -> list[AnyDict]:
     return res.json()
 
 
+def get_all_gh_pull_branches() -> list[str]:
+    return [pr["head"]["ref"] for pr in get_all_gh_pulls()]
+
+
+def skip_branch(branch: AnyDict) -> bool:
+    last_commit_sha = branch["head"]["sha"]
+    branch_name = branch["head"]["ref"]
+
+    # TEMPORARY:
+    # Only interested in new branches that have master_diff.html report in each test
+    if (
+        "grdddj" not in branch_name
+        or "unit_tests" in branch_name
+        or "ci_report" in branch_name
+    ):
+        print("Skipping, does not have master_diff.html")
+        return True
+
+    # Skip when we already have this commit in cache (and pipeline is finished)
+    if branch_name in CACHE:
+        cache_info = CACHE[branch_name]
+        if cache_info.last_commit_sha == last_commit_sha:
+            still_running = False
+            for job_info in cache_info.job_infos.values():
+                # TODO: investigate why this happens
+                # (from CLI it is object, from HTML it is dict)
+                if isinstance(job_info, dict):
+                    status = job_info["status"]
+                else:
+                    status = job_info.status
+                if status == "Running...":
+                    still_running = True
+            if not still_running:
+                print(f"Skipping, commit did not change - {last_commit_sha}")
+                return True
+
+    # It can come from a fork - we do not have UI tests for it
+    if branch_name == "master":
+        print("Ignoring a fork")
+        return True
+
+    return False
+
+
 def yield_recently_updated_gh_pr_branches() -> Iterator[BranchInfo]:
     for pr in get_all_gh_pulls():
-        last_commit_sha = pr["head"]["sha"]
         branch_name = pr["head"]["ref"]
         print(f"Getting branch {branch_name}")
 
-        # Skip when we already have this commit in cache (and pipeline is finished)
-        if branch_name in CACHE:
-            cache_info = CACHE[branch_name]
-            if cache_info.last_commit_sha == last_commit_sha:
-                still_running = False
-                for job_info in cache_info.job_infos.values():
-                    if job_info.status == "Running...":
-                        still_running = True
-                if not still_running:
-                    print(f"Skipping, commit did not change - {last_commit_sha}")
-                    continue
-
-        # It can come from a fork - we do not have UI tests for it
-        if branch_name == "master":
-            print("Ignoring a fork")
+        if skip_branch(pr):
             continue
+
+        last_commit_sha = pr["head"]["sha"]
 
         last_commit_timestamp = get_commit_ts(last_commit_sha)
         last_commit_datetime = datetime.fromtimestamp(last_commit_timestamp).strftime(

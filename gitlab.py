@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
-from typing import Callable, Iterator
+from typing import Iterator
 
 import requests
 
@@ -34,13 +34,18 @@ def get_newest_gitlab_branches() -> list[AnyDict]:
     return requests.get(BRANCHES_API_TEMPLATE.format(1)).json()["pipelines"]
 
 
-def get_branch_obj(branch_name: str) -> AnyDict:
+def get_branch_obj(
+    branch_name: str, first_page_cache: list[AnyDict] | None = None
+) -> AnyDict:
     # Trying first 10 pages of branches
     for page in range(1, 11):
+        # First page should be always updated (unless given),
+        # rest can be cached
         if page == 1:
-            # First page should be always updated,
-            # rest can be cached
-            branches = get_newest_gitlab_branches()
+            if first_page_cache:
+                branches = first_page_cache
+            else:
+                branches = get_newest_gitlab_branches()
         else:
             branches = get_gitlab_branches_cached(page)
             print(f"Checking page {page} / 10")
@@ -61,21 +66,13 @@ def get_pipeline_jobs_info(pipeline_iid: int) -> AnyDict:
     return requests.post(GRAPHQL_API, json=query).json()
 
 
-def get_differint_screens_link(job_id: str) -> str:
-    return f"https://satoshilabs.gitlab.io/-/trezor/trezor-firmware/-/jobs/{job_id}/artifacts/test_ui_report/differing_screens.html"
-
-
-def get_master_diff_link(job_id: str) -> str:
-    return f"https://satoshilabs.gitlab.io/-/trezor/trezor-firmware/-/jobs/{job_id}/artifacts/master_diff/differing_screens.html"
-
-
-def get_jobs_of_interests() -> list[tuple[str, Callable[[str], str]]]:
+def get_jobs_of_interests() -> list[str]:
     return [
-        ("core click R test", get_differint_screens_link),
-        ("core device R test", get_differint_screens_link),
-        ("core click test", get_differint_screens_link),
-        ("core device test", get_differint_screens_link),
-        ("unix ui changes", get_master_diff_link),
+        "core click R test",
+        "core device R test",
+        "core click test",
+        "core device test",
+        "unix ui changes",
     ]
 
 
@@ -112,29 +109,39 @@ def get_status_from_link(job: AnyDict, link: str) -> tuple[str, int]:
         return "Running...", 0
 
 
-def get_job_info(job: AnyDict, link: str, find_status: bool = True) -> JobInfo:
+def _get_job_info(job: AnyDict, find_status: bool = True) -> JobInfo:
+    passed = job["status"]["group"] == "success"
+    job_id = job["id"].split("/")[-1]
+    job_info = JobInfo(
+        name=job["name"],
+        job_id=job_id,
+        passed=passed,
+    )
+
     if find_status:
-        status, diff_screens = get_status_from_link(job, link)
+        status, diff_screens = get_status_from_link(job, job_info.master_diff_link)
     else:
         status, diff_screens = None, None
 
-    return JobInfo(
-        name=job["name"], link=link, status=status, diff_screens=diff_screens
-    )
+    job_info.status = status
+    job_info.diff_screens = diff_screens
+
+    return job_info
 
 
 def get_latest_infos_for_branch(
-    branch_name: str, find_status: bool
-) -> dict[str, JobInfo]:
-    branch_obj = get_branch_obj(branch_name)
+    branch_name: str, find_status: bool, first_page_cache: list[AnyDict] | None = None
+) -> tuple[str, dict[str, JobInfo]]:
+    branch_obj = get_branch_obj(branch_name, first_page_cache)
     pipeline_iid = branch_obj["iid"]
+    pipeline_id = branch_obj["id"]
+
+    pipeline_link = f"https://gitlab.com/satoshilabs/trezor/trezor-firmware/-/pipelines/{pipeline_id}"
 
     def yield_key_value() -> Iterator[tuple[str, JobInfo]]:
         for job in yield_pipeline_jobs(pipeline_iid):
-            for job_of_interest, link_func in get_jobs_of_interests():
+            for job_of_interest in get_jobs_of_interests():
                 if job["name"] == job_of_interest:
-                    job_id = job["id"].split("/")[-1]
-                    link = link_func(job_id)
-                    yield job["name"], get_job_info(job, link, find_status)
+                    yield job["name"], _get_job_info(job, find_status)
 
-    return dict(yield_key_value())
+    return pipeline_link, dict(yield_key_value())
