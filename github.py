@@ -43,7 +43,7 @@ def load_metadata_cache() -> AnyDict:
 
 def update_cache(cache_dict: dict[str, BranchInfo], all_branches: list[str]) -> None:
     # Removing already merged branches from cache
-    for branch in CACHE:
+    for branch in list(CACHE.keys()):  # create a copy of the keys
         if branch not in all_branches:
             del CACHE[branch]
 
@@ -83,22 +83,30 @@ def get_all_gh_pull_branches() -> list[str]:
 
 
 def skip_branch(branch: AnyDict) -> bool:
-    last_commit_sha = branch["head"]["sha"]
     branch_name = branch["head"]["ref"]
 
     # TEMPORARY:
     # Only interested in new branches that have master_diff.html report in each test
-    if (
-        "grdddj" not in branch_name
-        or "unit_tests" in branch_name
-        or "ci_report" in branch_name
-    ):
+    ui_changes_creators = [
+        "grdddj", "mmilata"
+    ]
+    if not any(creator in branch_name for creator in ui_changes_creators):
         print("Skipping, does not have master_diff.html")
         return True
 
-    # Skip when we already have this commit in cache (and pipeline is finished)
     if branch_name in CACHE:
+        last_commit_sha = branch["head"]["sha"]
         cache_info = CACHE[branch_name]
+
+        # Skip when the latest commit is so old it cannot have the master_diff report
+        july_1st_2023 = 1688162400
+        if cache_info.last_commit_timestamp < july_1st_2023:
+            print(
+                f"Skipping, commit is too old to have master_diff report - {cache_info.last_commit_datetime}"
+            )
+            return True
+
+        # Skip when we already have this commit in cache (and pipeline is finished)
         if cache_info.last_commit_sha == last_commit_sha:
             still_running = False
             for job_info in cache_info.job_infos.values():
