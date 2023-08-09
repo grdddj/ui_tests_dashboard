@@ -31,6 +31,12 @@ def load_branches_cache() -> dict[str, BranchInfo]:
     return {key: BranchInfo.from_dict(value) for key, value in cache_dict.items()}
 
 
+CACHE_FILE = HERE / "github_cache.json"
+if not CACHE_FILE.exists():
+    CACHE_FILE.write_text(json.dumps({"branches": {}, "metadata": {}}, indent=2))
+CACHE: dict[str, BranchInfo] = load_branches_cache()
+
+
 def load_metadata_cache() -> AnyDict:
     return load_cache_file()["metadata"]
 
@@ -51,12 +57,6 @@ def update_cache(cache_dict: dict[str, BranchInfo], all_branches: list[str]) -> 
         },
     }
     CACHE_FILE.write_text(json.dumps(content, indent=2))
-
-
-CACHE_FILE = HERE / "github_cache.json"
-if not CACHE_FILE.exists():
-    CACHE_FILE.write_text("{}")
-CACHE: dict[str, BranchInfo] = load_branches_cache()
 
 
 def get_commit_ts(commit_hash: str) -> int:

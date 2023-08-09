@@ -50,6 +50,7 @@
       <th>Status</th>
       <th>Passed</th>
       <th>Diff screens</th>
+      <th>Results</th>
     </tr>
     {% for job in branch.job_infos.values() %}
     <tr>
@@ -75,6 +76,12 @@
                 background-color: red;
                 {% endif %}">
         {{ job.diff_screens }}
+      </td>
+      <td style="
+                {% if job.job_results.failed > 0 %}
+                background-color: red;
+                {% endif %}">
+        {{ job.job_results }}
       </td>
     </tr>
     {% endfor %}

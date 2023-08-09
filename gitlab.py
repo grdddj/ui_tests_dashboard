@@ -56,8 +56,32 @@ def get_branch_obj(
 
 
 def get_pipeline_jobs_info(pipeline_iid: int) -> AnyDict:
+    # Getting just the stuff we need - the job names and IDs
+    graphql_query = """
+query getJobsFromPipeline($projectPath: ID!, $iid: ID!) {
+  project(fullPath: $projectPath) {
+    pipeline(iid: $iid) {
+      stages {
+        nodes {
+          groups {
+            nodes {
+              jobs {
+                nodes {
+                  id
+                  name
+                  status
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+    """
     query = {
-        "query": "fragment CiNeeds on JobNeedUnion {\n  ...CiBuildNeedFields\n  ...CiJobNeedFields\n}\n\nfragment CiBuildNeedFields on CiBuildNeed {\n  id\n  name\n}\n\nfragment CiJobNeedFields on CiJob {\n  id\n  name\n}\n\nfragment LinkedPipelineData on Pipeline {\n  __typename\n  id\n  iid\n  path\n  cancelable\n  retryable\n  userPermissions {\n    updatePipeline\n  }\n  status: detailedStatus {\n    __typename\n    id\n    group\n    label\n    icon\n  }\n  sourceJob {\n    __typename\n    id\n    name\n    retried\n  }\n  project {\n    __typename\n    id\n    name\n    fullPath\n  }\n}\n\nquery getPipelineDetails($projectPath: ID!, $iid: ID!) {\n  project(fullPath: $projectPath) {\n    __typename\n    id\n    pipeline(iid: $iid) {\n      __typename\n      id\n      iid\n      complete\n      usesNeeds\n      userPermissions {\n        updatePipeline\n      }\n      downstream {\n        __typename\n        nodes {\n          ...LinkedPipelineData\n        }\n      }\n      upstream {\n        ...LinkedPipelineData\n      }\n      stages {\n        __typename\n        nodes {\n          __typename\n          id\n          name\n          status: detailedStatus {\n            __typename\n            id\n            action {\n              __typename\n              id\n              icon\n              path\n              title\n            }\n          }\n          groups {\n            __typename\n            nodes {\n              __typename\n              id\n              status: detailedStatus {\n                __typename\n                id\n                label\n                group\n                icon\n              }\n              name\n              size\n              jobs {\n                __typename\n                nodes {\n                  __typename\n                  id\n                  name\n                  kind\n                  scheduledAt\n                  needs {\n                    __typename\n                    nodes {\n                      __typename\n                      id\n                      name\n                    }\n                  }\n                  previousStageJobsOrNeeds {\n                    __typename\n                    nodes {\n                      ...CiNeeds\n                    }\n                  }\n                  status: detailedStatus {\n                    __typename\n                    id\n                    icon\n                    tooltip\n                    hasDetails\n                    detailsPath\n                    group\n                    label\n                    action {\n                      __typename\n                      id\n                      buttonTitle\n                      icon\n                      path\n                      title\n                    }\n                  }\n                }\n              }\n            }\n          }\n        }\n      }\n    }\n  }\n}\n",
+        "query": graphql_query,
         "variables": {
             "projectPath": "satoshilabs/trezor/trezor-firmware",
             "iid": pipeline_iid,
@@ -93,7 +117,7 @@ def get_diff_screens_from_text(html_text: str) -> int:
 
 
 def get_status_from_link(job: AnyDict, link: str) -> tuple[str, int]:
-    if job["status"]["label"] == "skipped":
+    if job["status"] == "SKIPPED":
         return "Skipped", 0
 
     if link in BRANCH_CACHE:
@@ -110,13 +134,14 @@ def get_status_from_link(job: AnyDict, link: str) -> tuple[str, int]:
 
 
 def _get_job_info(job: AnyDict, find_status: bool = True) -> JobInfo:
-    passed = job["status"]["group"] == "success"
+    passed = job["status"] == "SUCCESS"
     job_id = job["id"].split("/")[-1]
     job_info = JobInfo(
         name=job["name"],
         job_id=job_id,
         passed=passed,
     )
+    job_info.job_results = job_info.get_job_results()
 
     if find_status:
         status, diff_screens = get_status_from_link(job, job_info.master_diff_link)

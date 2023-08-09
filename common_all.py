@@ -1,11 +1,30 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+import requests
+
 AnyDict = dict[Any, Any]
+
+
+@dataclass
+class TestResult:
+    failed: int = 0
+    passed: int = 0
+    error: int = 0
+
+    @classmethod
+    def from_line(cls, line: str) -> TestResult:
+        self = TestResult()
+        for key in self.__annotations__:
+            match = re.search(rf"(\d+) {key}", line)
+            if match:
+                setattr(self, key, int(match.group(1)))
+        return self
 
 
 @dataclass
@@ -41,13 +60,18 @@ class BranchInfo:
         return asdict(self)
 
 
-job_info_extra_properties = ["job_link", "reports_link", "master_diff_link"]
+job_info_extra_properties = [
+    "job_link",
+    "reports_link",
+    "master_diff_link",
+]
 
 
 @dataclass
 class JobInfo:
     name: str
     job_id: str
+    job_results: dict[str, int] | None = None
     passed: bool = False
     status: str | None = None
     diff_screens: int | None = None
@@ -88,6 +112,18 @@ class JobInfo:
     @property
     def reports_link(self) -> str:
         return f"{self.job_link}/artifacts/browse/{self._folder}"
+
+    @property
+    def raw_output_link(self) -> str:
+        return f"{self.job_link}/raw"
+
+    def get_job_results(self) -> dict[str, int]:
+        raw_results = requests.get(self.raw_output_link).text
+        result_pattern = r"= .* passed.*s \(\d.*\) ="
+        result_line = re.search(result_pattern, raw_results)
+        if result_line:
+            return asdict(TestResult.from_line(result_line.group(0)))
+        return asdict(TestResult())
 
 
 def get_logger(name: str, log_file_path: str | Path) -> logging.Logger:
