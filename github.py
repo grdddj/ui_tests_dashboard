@@ -17,7 +17,7 @@ load_dotenv()
 
 HERE = Path(__file__).parent
 
-GITHUB_PR_API = "https://api.github.com/repos/trezor/trezor-firmware/pulls"
+GITHUB_PR_API = "https://api.github.com/repos/trezor/trezor-firmware/pulls?page=1&per_page=100"
 GH_TOKEN = os.getenv("GITHUB_API_TOKEN")
 GH_HEADERS = {"Authorization": f"token {GH_TOKEN}"} if GH_TOKEN else {}
 
