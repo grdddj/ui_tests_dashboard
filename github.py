@@ -88,7 +88,7 @@ def skip_branch(branch: AnyDict) -> bool:
     # TEMPORARY:
     # Only interested in new branches that have master_diff.html report in each test
     ui_changes_creators = [
-        "grdddj", "mmilata"
+        "grdddj", "mmilata", "obrusvit", "matejcik", "tychovrahe"
     ]
     if not any(creator in branch_name for creator in ui_changes_creators):
         print("Skipping, does not have master_diff.html")
